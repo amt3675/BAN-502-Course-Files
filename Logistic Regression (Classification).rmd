@@ -1,0 +1,277 @@
+---
+title: "Logistic Regression (Classification)"
+author: "Alex Terpolilli"
+date: "5/31/2021"
+output: word_document
+---
+
+```{r}
+#install.packages('e1071')
+#install.packages('ROCR')
+library(tidyverse)
+library(tidymodels)
+library(e1071)
+library(ROCR)
+```
+
+
+```{r}
+parole <- read.csv('parole.csv')
+```
+
+```{r}
+parole <- parole %>%
+  mutate(male = as_factor(male)) %>%
+  mutate(race = as_factor(race)) %>%
+  mutate(state = as_factor(state)) %>%
+  mutate(crime = as_factor(crime)) %>%
+  mutate(multiple.offenses = as_factor(multiple.offenses)) %>%
+  mutate(violator = as_factor(violator))
+```
+
+```{r}
+parole <- parole %>%
+  mutate(male = fct_recode(male, "Male" = "1", "Female" = "0")) %>%
+  mutate(race = fct_recode(race, "White" = "1", "Other" = "2")) %>%
+  mutate(state = fct_recode(state, "Other" = "1", "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4")) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "Multiple Offenses" = "1", "Other" = "0")) %>%
+  mutate(violator = fct_recode(violator, "Violated Parole" = "1", "Did Not Violate Parole" = "0")) %>%
+  mutate(crime = fct_recode(crime, "Larceny" = "2", "Drug-Related" = "3", "Driving-Related" = "4", "Other" = "1"))
+```
+  
+### Task 1
+```{r}
+set.seed(12345)
+parole_split = initial_split(parole, prop = .70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+### Task 2
+```{r}
+ggplot(train, aes(fill=violator, x=male)) +
+  geom_bar(position = "fill")
+
+ggplot(train, aes(fill=violator, x=race)) +
+  geom_bar(position = "fill")
+
+ggplot(train, aes(x=violator, y=age)) +
+  geom_boxplot()
+
+ggplot(train, aes(fill=violator, x=state)) +
+  geom_bar(position = "fill")
+
+ggplot(train, aes(fill=violator, x=multiple.offenses)) +
+  geom_bar(position = "fill")
+
+ggplot(train, aes(fill=violator, x=crime)) +
+  geom_bar(position = "fill")
+
+```
+
+Each of the above charts help us get a better understanding of how each variable may impact the probability that someone would violate parole. For me, the variable that seems to be most predictive is state. Looking at that chart, it seems that people in Louisiana are much more likely to violate their parole than people from other states. It seems that Louisiana has a rate of just under .50, while the other states are well below .25. This will likely be a big predictor, when we develop our model. 
+
+### Task 3
+```{r}
+parole_model = 
+  logistic_reg() %>% 
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit = fit(logreg_wf, train)
+```
+
+```{r}
+summary(parole_fit$fit$fit$fit)
+```
+This model seems to tell the story that I saw in the chart above. Louisiana has a positive coeffiencent, which would mean we would expect more likely to violate parole. The one thing that stands out to me, is it does not seem Kentucky is a significant predictor for this model. Would we be best to include that in the "Other" category? 
+
+### Task 4
+
+```{r}
+parole_model = 
+  logistic_reg() %>% 
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ ., train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit2 = fit(logreg_wf, train)
+
+summary(parole_fit2$fit$fit$fit)
+```
+
+```{r}
+parole_model = 
+  logistic_reg() %>% 
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state + multiple.offenses + race, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit3 = fit(logreg_wf, train)
+
+summary(parole_fit3$fit$fit$fit)
+```
+
+I tried a few different combination of variables for our model, however, the one that I settled on included state, multiple.offenses and race. This model results in an AIC of 256.52, which is better than the AIC that we got with just state (278.95), and the AIC we got if we use all of the varaibles (265.68). The one thing that stands out to me in this, is the P-value of the states, specifically Louisiana. I also tried removing state as a variable in this model, however we end up with a significantly worse AIC value. 
+
+### Task 5
+
+This was the same as the model that I chose above. Again, the state variables were surprising to me, as Kentucky and Louisiana seem to be non-significant, while Virginia seems to be significant. If I were concocting this model solely off of the charts above, I would have not have guessed that Virginia would be the most significant state value. 
+
+```{r}
+parole_model = 
+  logistic_reg() %>% 
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state + multiple.offenses + race, train)
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit3 = fit(logreg_wf, train)
+
+summary(parole_fit3$fit$fit$fit)
+```
+
+### Task 6
+```{r}
+newdata = data.frame(state = "Louisiana", multiple.offenses = "Multiple Offenses", race = "White")
+predict(parole_fit3, newdata, type="prob")
+```
+
+Based on the model that uses state, multiple.offenses, and race to predicted whether Parole will be violated. The probability that Parolee1 violates parole is .3311. 
+
+```{r}
+newdata = data.frame(state = "Kentucky", multiple.offenses = "Other", race = "Other")
+predict(parole_fit3, newdata, type="prob")
+```
+
+Based on the model that uses state, multiple.offenses, and race to predicted whether Parole will be violated. The probability that Parolee2 violates parole is .2015. 
+
+### Task 7
+```{r}
+predictions = predict(parole_fit3, train, type="prob") #develop predicted probabilities
+head(predictions)
+
+predictions = predict(parole_fit3, train, type="prob")[2]
+head(predictions)
+```
+
+```{r}
+#Change this next line to the names of your predictions and the response variable in the training data frame
+ROCRpred = prediction(predictions, train$violator) 
+
+###You shouldn't need to ever change the next two lines:
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+```{r}
+#Determine threshold to balance sensitivity and specificity
+#DO NOT modify this code
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+The cutoff that should be used to best even out sensitivity and specificity is .2015788. 
+
+### Task 8
+
+Test thresholds to evaluate accuracy  
+```{r}
+#confusion matrix
+#The "No" and "Yes" represent the actual values
+#The "FALSE" and "TRUE" represent our predicted values
+t1 = table(train$violator,predictions > 0.2015788)
+t1
+```
+#Accuracy
+```{r}
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+#Sensitivity
+```{r}
+36/(36+18)
+```
+
+#Specificity
+```{r}
+360/(360+57)
+```
+
+The accuracy number that we get for the threshold of .2015788 is .8407. The Sensitivity number that we get is .66, and the specificity number that we get is .8633. The Specificity and Sensitivity numbers actually vary slightly from what we got in the above step. The implication of incorrectly classifying a paroleeing is we would suggest that they are more likely to violate parole, which could cause them to have greater restrictions, or perhaps deny parole all together. This would be a big deal. 
+
+### Task 9
+```{r}
+t1 = table(train$violator,predictions > 0.2)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.3)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.4)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.6)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+```{r}
+t1 = table(train$violator,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+The threshold that I found that gave the best accuracy for the train dataset is a threshold of .5. 
+
+### Task 10
+
+```{r}
+predictions = predict(parole_fit3, test, type="prob") #develop predicted probabilities
+head(predictions)
+
+predictions = predict(parole_fit3, test, type="prob")[2]
+head(predictions)
+
+t1 = table(test$violator,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(test)
+```
+
+Using the threshold of .5, this model has an accuracy of .897 on the test dataset, which is very similar to the accuracy shown at this threshold for the train data set. I am pleased that the accuracy for these two are so similar.

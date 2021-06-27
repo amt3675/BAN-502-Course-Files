@@ -1,0 +1,231 @@
+---
+title: "Random Forest Assignment"
+author: "Alex Terpolilli"
+date: "6/7/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(tidymodels)
+library(tidyverse)
+library(caret)
+library(vip)
+library(ranger)
+library(gridExtra)
+```
+
+```{r}
+drug = read_csv("drug_data-1.csv")
+```
+
+```{r}
+names(drug) = c("ID", "Age", "Gender", "Education", "Country", "Ethnicity","Nscore", "Escore", "Oscore", "Ascore", "Cscore", "Impulsive","SS", "Alcohol", "Amphet", "Amyl", "Benzos", "Caff", "Cannabis","Choc", "Coke", "Crack", "Ecstasy", "Heroin", "Ketamine", "Legalh","LSD", "Meth", "Mushrooms", "Nicotine", "Semer", "VSA")
+```
+
+```{r}
+drug[drug == "CL0"] = "No"
+drug[drug == "CL1"] = "No"
+drug[drug == "CL2"] = "Yes"
+drug[drug == "CL3"] = "Yes"
+drug[drug == "CL4"] = "Yes"
+drug[drug == "CL5"] = "Yes"
+drug[drug == "CL6"] = "Yes"
+```
+
+```{r}
+drug_clean = drug %>% mutate_at(vars(Age:Ethnicity), funs(as_factor)) %>%
+  mutate(Age = factor(Age, labels = c("18_24", "25_34", "35_44",
+                                      "45_54", "55_64", "65_"))) %>%
+  mutate(Gender = factor(Gender, labels = c("Male", "Female"))) %>%
+  mutate(Education = factor(Education, labels =
+                              c("Under16", "At16", "At17", "At18", "SomeCollege","ProfessionalCert", "Bachelors", "Masters", "Doctorate"))) %>%
+  mutate(Country = factor(Country,labels = c("USA", "NewZealand", "Other", "Australia","Ireland","Canada","UK"))) %>%
+  mutate(Ethnicity = factor(Ethnicity,labels = c("Black", "Asian", "White", "White/Black", "Other","White/Asian", "Black/Asian"))) %>%
+  mutate_at(vars(Alcohol:VSA), funs(as_factor)) %>%
+  select(-ID)
+```
+
+```{r, include=FALSE}
+str(drug_clean)
+```
+
+
+
+```{r}
+drug_clean = drug_clean %>%
+  select(!(Alcohol:Mushrooms)) %>%
+  select(!(Semer:VSA))
+
+names(drug_clean)
+```
+
+
+### Task 1
+
+```{r}
+summary(drug_clean)
+table(drug_clean$Education)
+```
+
+Looking at the above summary of the "Drug_clean" dataset, there does not appear to be any missing data. There are no N/A's present. Education was the only variable that had "Other" listed, but that is just for having more classes than can be shown. 
+
+### Task 2
+
+```{r}
+set.seed(1234)
+drug_split = initial_split(drug_clean, prop = .70, strata = Nicotine)
+train = training(drug_split)
+test = testing(drug_split)
+```
+
+### Task 3
+
+```{r}
+p1 = ggplot(train, aes(x = Age, fill = Nicotine)) + geom_bar(position = "fill")
+p2 = ggplot(train, aes(x = Gender, fill = Nicotine)) + geom_bar(position = "fill")
+p3 = ggplot(train, aes(x = Education, fill = Nicotine)) + geom_bar(position = "fill")
+p4 = ggplot(train, aes(x = Country, fill = Nicotine)) + geom_bar(position = "fill")
+
+p5 = ggplot(train, aes(x = Ethnicity, fill = Nicotine)) + geom_bar(position = "fill")
+p6 = ggplot(train, aes(x = Nscore, fill = Nicotine)) + geom_boxplot()
+p7 = ggplot(train, aes(x = Escore, fill = Nicotine)) + geom_boxplot()
+p8 = ggplot(train, aes(x = Oscore, fill = Nicotine)) + geom_boxplot()
+
+p9 = ggplot(train, aes(x = Ascore, fill = Nicotine)) + geom_boxplot()
+p10 = ggplot(train, aes(x = Cscore, fill = Nicotine)) + geom_boxplot()
+p11 = ggplot(train, aes(x = Impulsive, fill = Nicotine)) + geom_boxplot()
+p12 = ggplot(train, aes(x = SS, fill = Nicotine)) + geom_boxplot()
+grid.arrange(p1,p2,p3,p4)
+grid.arrange(p5,p6,p7,p8)
+grid.arrange(p9,p10,p11,p12)
+```
+
+Above are charts showing the relationship of the other variables in the training dataset with Nicotine. I have put my thoughts on the relationship between each variable below. 
+
+Age - Age does have a relationship with Nicotine use. The older the respondent, the less likely they are a Nicotine user. 
+
+Gender - Gender does seem to have a relationship with Nicotine use. Females are less likely to be a Nicotine user. 
+
+Education - Education also seems to have a slight relationship with Nicotine use. The higher the education level, the less likely the individual is a Nicotine user. 
+
+Country - Country also has a relationship with Nicotine use. The obvious one that sticks out, is the big relationship between New Zealand and no Nicotine use. 
+
+Ethnicity - Ethnicity again has a relationship with nicoting use, shown in the chart above. 
+
+NScore - NScore seems to have a very slight relationship with Nicotine use. Individuals who are Nicotine users tend to have a slightly higher Nscore value.
+
+EScore - EScore does not seem to have a relationship with Nicotine use.
+
+OScore - OScore seems to again have a slight relationship, similar to NScore. 
+
+AScore - AScore seems to have very little relationship with Nicotine use. 
+
+CScore - CScore does look to have a slight relationship with Nicotine use, with individuals who do not use nicotine having a slightly higher CScore. 
+
+Impulsive - Impulsive does have a relationship with Nicotine use, with individuals who are Nicotine users having a slightly higher Impuslive value. 
+
+SS - Finally, SS does seem to have a relationship with Nicotine use, with Nicotine users having higher SS values than non-users. 
+
+### Task 4
+
+
+```{r}
+set.seed(123)
+rf_folds = vfold_cv(train, v = 5)
+```
+
+
+```{r}
+Nicotine_recipe = recipe(Nicotine ~., train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+rf_model = rand_forest(mtry = tune(), min_n = tune(), trees = 100) %>% #add tuning of mtry and min_n parameters
+  #setting trees to 100 here should also speed things up a bit, but more trees might be better
+  set_engine("ranger", importance = "permutation") %>% #added importance metric
+  set_mode("classification")
+
+Nicotine_wflow =
+  workflow() %>%
+  add_model(rf_model) %>%
+  add_recipe(Nicotine_recipe)
+
+rf_grid = grid_regular(
+  mtry(range = c(2, 8)), #these values determined through significant trial and error
+  min_n(range = c(5, 20)), #these values determined through significant trial and error
+  levels = 10
+)
+
+set.seed(123)
+rf_res_tuned = tune_grid(
+  Nicotine_wflow,
+  resamples = rf_folds,
+  grid = rf_grid #use the tuning grid
+)
+```
+
+```{r}
+rf_res_tuned %>%
+  collect_metrics() %>%
+  filter(.metric == "accuracy") %>%
+  select(mean, min_n, mtry) %>%
+  pivot_longer(min_n:mtry,
+    values_to = "value",
+    names_to = "parameter"
+  ) %>%
+  ggplot(aes(value, mean, color = parameter)) +
+  geom_point(show.legend = FALSE) +
+  facet_wrap(~parameter, scales = "free_x") +
+  labs(x = NULL, y = "Accuracy")
+```
+
+
+### Task 5
+```{r}
+best_rf = select_best(rf_res_tuned, "accuracy")
+
+final_rf = finalize_workflow(
+  Nicotine_wflow,
+  best_rf
+)
+
+final_rf
+```
+
+```{r}
+#fit the finalized workflow to our training data
+final_rf_fit = fit(final_rf, train)
+```
+
+Check out variable importance
+```{r}
+final_rf_fit %>% pull_workflow_fit() %>% vip(geom = "point")
+```
+
+The variables that are most important in this model are SS (Sensation-Seeking), followed by Country_UK. SS seems to be most important, by a wide margin, with many other variables being around the "Country_UK" variable.
+
+### Task 6
+Predictions  
+```{r}
+trainpredrf = predict(final_rf_fit, train)
+head(trainpredrf)
+```
+
+Confusion matrix
+```{r}
+confusionMatrix(trainpredrf$.pred_class, train$Nicotine, 
+                positive = "Yes")
+```
+
+Predictions on test
+```{r}
+testpredrf = predict(final_rf_fit, test)
+head(testpredrf)
+confusionMatrix(testpredrf$.pred_class, test$Nicotine, 
+                positive = "Yes")
+```
+
+The model seems to do well on our Training Dataset, however, it seems to fall off against the Testing Dataset. The accuracy on the Training set, is .92, while the accuracy on the Testing set is only .69, barely above the naive accuracy. 
+
+### Task 7 
+
+This model may be used in the real world by a Health Insurance company to determine whether a insured person would be a drug user. I would have my doubts about using this model in a real-world setting labeling individuals as drug-users, as that is a serious claim. I would want to be sure the model is as accurate as possible, and the differences we saw when looking at the training set and the testing set does not give me the confidence that this model should be used at this time. 
